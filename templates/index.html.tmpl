@@ -1,11 +1,99 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .calendar {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 10px;
+            margin: 20px;
+        }
+        .calendar .day {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+        }
+        .calendar .header {
+            font-weight: bold;
+        }
+        .nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px;
+        }
+        .nav button {
+            padding: 10px;
+        }
+        #nameForm {
+            display: none;
+            margin-top: 20px;
+        }
+    </style>
 </head>
 <body>
-<h1>Hello from Fly</h1>
-{{ if .Region }}
-<h2>I'm running in the {{.Region}} region</h2>
-{{end}}
+    <div class="nav">
+        <form method="get" action="/">
+            <input type="hidden" name="month" value="{{.PrevMonth}}">
+            <input type="hidden" name="year" value="{{.PrevYear}}">
+            <button type="submit">&lt; Previous</button>
+        </form>
+        <h1>Calendar for {{.Month}} {{.Year}}</h1>
+        <form method="get" action="/">
+            <input type="hidden" name="month" value="{{.NextMonth}}">
+            <input type="hidden" name="year" value="{{.NextYear}}">
+            <button type="submit">Next &gt;</button>
+        </form>
+    </div>
+    <div class="calendar">
+        <div class="header">Sun</div>
+        <div class="header">Mon</div>
+        <div class="header">Tue</div>
+        <div class="header">Wed</div>
+        <div class="header">Thu</div>
+        <div class="header">Fri</div>
+        <div class="header">Sat</div>
+        {{range $index, $day := .Days}}
+        <div class="day" onclick="selectDay({{$index}}, {{$day}})">{{if $day}}{{$day}}{{end}}</div>
+        {{end}}
+    </div>
+    <form id="nameForm" action="/submit-name" method="post">
+        <h2 id="selectedDate"></h2>
+        <input type="hidden" id="selectedDateInput" name="date">
+        <input type="text" name="name" placeholder="Your name" required>
+        <button type="submit">Submit</button>
+    </form>
+    <div id="nameList"></div>
+    <script>
+        function selectDay(index, day) {
+            if (day) {
+                const year = {{.Year}};
+                const month = {{.MonthNumber}};
+                const date = `${year}-${month}-${day}`;
+                document.getElementById('selectedDate').innerText = `Selected Date: ${date}`;
+                document.getElementById('selectedDateInput').value = date;
+                document.getElementById('nameForm').style.display = 'block';
+
+                fetch(`/names?date=${date}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const nameList = document.getElementById('nameList');
+                        nameList.innerHTML = '<h3>Names:</h3>';
+                        data.names.forEach(name => {
+                            const div = document.createElement('div');
+                            div.innerText = name;
+                            nameList.appendChild(div);
+                        });
+                    });
+            }
+        }
+    </script>
 </body>
 </html>
