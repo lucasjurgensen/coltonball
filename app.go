@@ -54,16 +54,22 @@ func main() {
 		lastOfMonth := firstOfMonth.AddDate(0, 1, -1)
 		daysInMonth := lastOfMonth.Day()
 
-		days := make([]string, 0, 42)
+		days := make([]map[string]interface{}, 0, 42)
 
 		for i := 0; i < firstDayOfWeek; i++ {
-			days = append(days, "")
+			days = append(days, map[string]interface{}{"day": "", "count": 0, "names": []string{}})
 		}
 		for d := 1; d <= daysInMonth; d++ {
-			days = append(days, strconv.Itoa(d))
+			date := firstOfMonth.AddDate(0, 0, d-1).Format("2006-01-02")
+			namesStore.Lock()
+			names := namesStore.data[date]
+			count := len(names)
+			namesStore.Unlock()
+			log.Printf("Date: %s, Count: %d, Names: %v", date, count, names)
+			days = append(days, map[string]interface{}{"day": d, "count": count, "names": names})
 		}
 		for len(days) < 42 {
-			days = append(days, "")
+			days = append(days, map[string]interface{}{"day": "", "count": 0, "names": []string{}})
 		}
 
 		prevMonth := currentMonth - 1
@@ -99,15 +105,54 @@ func main() {
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 			return
 		}
-
-		date := r.FormValue("date")
+		dateStr := r.FormValue("date")
 		name := r.FormValue("name")
 
+		// Parse the date and reformat it to ensure consistency
+		date, err := time.Parse("2006-1-2", dateStr)
+		if err != nil {
+			http.Error(w, "Invalid date format", http.StatusBadRequest)
+			return
+		}
+		formattedDate := date.Format("2006-01-02")
+
 		namesStore.Lock()
-		namesStore.data[date] = append(namesStore.data[date], name)
+		namesStore.data[formattedDate] = append(namesStore.data[formattedDate], name)
+		log.Printf("Added name %s to date %s. New count: %d", name, formattedDate, len(namesStore.data[formattedDate]))
+		namesStore.Unlock()
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	})
+
+	http.HandleFunc("/remove-name", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Date string `json:"date"`
+			Name string `json:"name"`
+		}
+		err := json.NewDecoder(r.Body).Decode(&req)
+		if err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		namesStore.Lock()
+		names := namesStore.data[req.Date]
+		for i, n := range names {
+			if n == req.Name {
+				namesStore.data[req.Date] = append(names[:i], names[i+1:]...)
+				break
+			}
+		}
 		namesStore.Unlock()
 
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+		})
 	})
 
 	http.HandleFunc("/names", func(w http.ResponseWriter, r *http.Request) {

@@ -12,16 +12,30 @@
             display: grid;
             grid-template-columns: repeat(7, 1fr);
             gap: 10px;
-            margin: 20px;
+            margin: 20px auto;
+            width: 80%;
+            max-width: 800px;
         }
         .calendar .day {
             border: 1px solid #ddd;
-            padding: 10px;
+            padding: 5px;
             text-align: center;
             cursor: pointer;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        .calendar .day.blue {
+            background-color: lightblue;
+        }
+        .calendar .day.green {
+            background-color: lightgreen;
         }
         .calendar .header {
             font-weight: bold;
+            text-align: center;
         }
         .nav {
             display: flex;
@@ -35,6 +49,21 @@
         #nameForm {
             display: none;
             margin-top: 20px;
+        }
+        .name-list {
+            margin-top: 20px;
+        }
+        .name-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .name-item button {
+            margin-left: 10px;
+            background-color: red;
+            color: white;
+            border: none;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -61,7 +90,17 @@
         <div class="header">Fri</div>
         <div class="header">Sat</div>
         {{range $index, $day := .Days}}
-        <div class="day" onclick="selectDay({{$index}}, {{$day}})">{{if $day}}{{$day}}{{end}}</div>
+        <div class="day {{if and (gt .count 0) (le .count 3)}}blue{{else if ge .count 4}}green{{end}}" 
+                onclick="selectDay({{$index}}, {{.day}})"
+                data-count="{{.count}}">
+            {{if .day}}
+            <div>{{.day}}</div>
+            <div>Count: {{.count}}</div>
+            {{range $i, $name := .names}}
+                {{if lt $i 4}}<div>{{$name}}</div>{{end}}
+            {{end}}
+            {{end}}
+        </div>
         {{end}}
     </div>
     <form id="nameForm" action="/submit-name" method="post">
@@ -70,13 +109,14 @@
         <input type="text" name="name" placeholder="Your name" required>
         <button type="submit">Submit</button>
     </form>
-    <div id="nameList"></div>
+    <div id="nameList" class="name-list"></div>
     <script>
         function selectDay(index, day) {
             if (day) {
                 const year = {{.Year}};
-                const month = {{.MonthNumber}};
-                const date = `${year}-${month}-${day}`;
+                const month = {{.MonthNumber}}.toString().padStart(2, '0');
+                const paddedDay = day.toString().padStart(2, '0');
+                const date = `${year}-${month}-${paddedDay}`;
                 document.getElementById('selectedDate').innerText = `Selected Date: ${date}`;
                 document.getElementById('selectedDateInput').value = date;
                 document.getElementById('nameForm').style.display = 'block';
@@ -88,12 +128,43 @@
                         nameList.innerHTML = '<h3>Names:</h3>';
                         data.names.forEach(name => {
                             const div = document.createElement('div');
-                            div.innerText = name;
+                            div.classList.add('name-item');
+                            div.innerHTML = `${name} <button onclick="removeName('${date}', '${name}')">x</button>`;
                             nameList.appendChild(div);
                         });
+                        // Update the count and color of the day
+                        const dayElement = document.querySelector(`.day[data-date="${date}"]`);
+                        if (dayElement) {
+                            const count = data.names.length;
+                            dayElement.querySelector('.count').textContent = `Count: ${count}`;
+                            dayElement.className = `day ${count >= 1 && count <= 3 ? 'blue' : count >= 4 ? 'green' : ''}`;
+                        }
                     });
             }
         }
+
+        function removeName(date, name) {
+            fetch('/remove-name', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ date, name })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    selectDay(0, date.split('-')[2]);
+                }
+            });
+        }
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.day').forEach(function(day) {
+                console.log('Day:', day.textContent.trim(), 'Count:', day.dataset.count);
+            });
+        });
     </script>
 </body>
 </html>
