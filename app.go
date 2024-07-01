@@ -132,7 +132,17 @@ func main() {
 		name := r.FormValue("name")
 
 		namesStore.Lock()
-		namesStore.data[date] = append(namesStore.data[date], name)
+		exists := false
+		for _, n := range namesStore.data[date] {
+			if n == name {
+				exists = true
+				log.Printf("Did not add name %s to date %s as they already signed up", name, date)
+			}
+		}
+
+		if !exists {
+			namesStore.data[date] = append(namesStore.data[date], name)
+		}
 		namesStore.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
