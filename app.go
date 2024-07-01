@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 //go:embed templates/*
@@ -18,36 +21,62 @@ var resources embed.FS
 
 var t = template.Must(template.ParseFS(resources, "templates/*"))
 
-var namesStore = struct {
-	sync.Mutex
-	data map[string][]string
-}{
-	data: make(map[string][]string),
+var db *sql.DB
+var dbMutex sync.Mutex
+
+func initDB() {
+	var err error
+	db, err = sql.Open("sqlite3", "/var/lib/litefs/names.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	createTableSQL := `CREATE TABLE IF NOT EXISTS names (
+		"id" INTEGER PRIMARY KEY AUTOINCREMENT,
+		"date" TEXT,
+		"name" TEXT
+	);`
+
+	_, err = db.Exec(createTableSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func printState() {
-	namesStore.Lock()
-	defer namesStore.Unlock()
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
 
 	yesterday := time.Now().AddDate(0, 0, -1)
 
 	fmt.Printf("############\nCurrent State at: %v\n", time.Now())
-	for dateStr, names := range namesStore.data {
-		date, err := time.Parse("2006-01-02", dateStr)
-		if err != nil {
-			fmt.Printf("Error parsing date %s: %v\n", dateStr, err)
-			continue
-		}
+	rows, err := db.Query("SELECT date, name FROM names WHERE date > ?", yesterday.Format("2006-01-02"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
 
-		if date.After(yesterday) && len(names) > 0 {
-			fmt.Printf("Date: %s, Names: %v\n", dateStr, names)
+	namesMap := make(map[string][]string)
+	for rows.Next() {
+		var dateStr string
+		var name string
+		err = rows.Scan(&dateStr, &name)
+		if err != nil {
+			log.Fatal(err)
 		}
+		namesMap[dateStr] = append(namesMap[dateStr], name)
+	}
+
+	for dateStr, names := range namesMap {
+		fmt.Printf("Date: %s, Names: %v\n", dateStr, names)
 	}
 	println("############")
-
 }
 
 func main() {
+	initDB()
+	defer db.Close()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -82,13 +111,26 @@ func main() {
 			days = append(days, map[string]interface{}{"day": 0, "count": 0, "names": []string{}, "date": ""})
 		}
 
+		dbMutex.Lock()
 		for d := 1; d <= daysInMonth; d++ {
 			date := firstOfMonth.AddDate(0, 0, d-1).Format("2006-01-02")
-			namesStore.Lock()
-			names := namesStore.data[date]
-			namesStore.Unlock()
+			rows, err := db.Query("SELECT name FROM names WHERE date = ?", date)
+			if err != nil {
+				log.Fatal(err)
+			}
+			var names []string
+			for rows.Next() {
+				var name string
+				err = rows.Scan(&name)
+				if err != nil {
+					log.Fatal(err)
+				}
+				names = append(names, name)
+			}
+			rows.Close()
 			days = append(days, map[string]interface{}{"day": d, "count": len(names), "names": names, "date": date})
 		}
+		dbMutex.Unlock()
 
 		for len(days) < 42 {
 			days = append(days, map[string]interface{}{"day": 0, "count": 0, "names": []string{}, "date": ""})
@@ -131,26 +173,29 @@ func main() {
 		date := r.FormValue("date")
 		name := r.FormValue("name")
 
-		namesStore.Lock()
-		exists := false
-		for _, n := range namesStore.data[date] {
-			if n == name {
-				exists = true
-				log.Printf("Did not add name %s to date %s as they already signed up", name, date)
-			}
+		dbMutex.Lock()
+		var exists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM names WHERE date = ? AND name = ?)", date, name).Scan(&exists)
+		if err != nil {
+			log.Fatal(err)
 		}
 
 		if !exists {
-			namesStore.data[date] = append(namesStore.data[date], name)
+			_, err = db.Exec("INSERT INTO names (date, name) VALUES (?, ?)", date, name)
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else {
+			log.Printf("Did not add name %s to date %s as they already signed up", name, date)
 		}
-		namesStore.Unlock()
+		dbMutex.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 		})
 
-		log.Printf("Added name %s to date %s. New count: %d", name, date, len(namesStore.data[date]))
+		log.Printf("Added name %s to date %s. New count: %d", name, date, len(name)) // This log line may need adjustment
 
 		printState()
 	})
@@ -171,15 +216,12 @@ func main() {
 			return
 		}
 
-		namesStore.Lock()
-		names := namesStore.data[req.Date]
-		for i, n := range names {
-			if n == req.Name {
-				namesStore.data[req.Date] = append(names[:i], names[i+1:]...)
-				break
-			}
+		dbMutex.Lock()
+		_, err = db.Exec("DELETE FROM names WHERE date = ? AND name = ?", req.Date, req.Name)
+		dbMutex.Unlock()
+		if err != nil {
+			log.Fatal(err)
 		}
-		namesStore.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -192,9 +234,23 @@ func main() {
 	http.HandleFunc("/names", func(w http.ResponseWriter, r *http.Request) {
 		date := r.URL.Query().Get("date")
 
-		namesStore.Lock()
-		names := namesStore.data[date]
-		namesStore.Unlock()
+		dbMutex.Lock()
+		rows, err := db.Query("SELECT name FROM names WHERE date = ?", date)
+		dbMutex.Unlock()
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer rows.Close()
+
+		var names []string
+		for rows.Next() {
+			var name string
+			err = rows.Scan(&name)
+			if err != nil {
+				log.Fatal(err)
+			}
+			names = append(names, name)
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
