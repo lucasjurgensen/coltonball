@@ -7,25 +7,25 @@
     <style>
         body {
             font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
         }
         .calendar {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 10px;
-            margin: 20px auto;
-            width: 80%;
-            max-width: 800px;
+            gap: 5px;
         }
         .calendar .day {
             border: 1px solid #ddd;
             padding: 5px;
             text-align: center;
             cursor: pointer;
-            height: 80px;
+            height: 60px;
             display: flex;
-            align-items: center;
-            justify-content: center;
             flex-direction: column;
+            justify-content: center;
+            align-items: center;
         }
         .calendar .day.blue {
             background-color: lightblue;
@@ -36,33 +36,35 @@
         .calendar .header {
             font-weight: bold;
             text-align: center;
+            padding: 5px;
         }
         .nav {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin: 20px;
+            margin-bottom: 20px;
         }
         .nav button {
             padding: 10px;
         }
         #nameForm {
-            display: none;
             margin-top: 20px;
         }
-        .name-list {
+        #nameList {
             margin-top: 20px;
         }
         .name-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
         }
         .name-item button {
-            margin-left: 10px;
-            background-color: red;
+            background-color: #ff4d4d;
             color: white;
             border: none;
+            padding: 5px 10px;
             cursor: pointer;
         }
     </style>
@@ -74,7 +76,7 @@
             <input type="hidden" name="year" value="{{.PrevYear}}">
             <button type="submit">&lt; Previous</button>
         </form>
-        <h1>Calendar for {{.Month}} {{.Year}}</h1>
+        <h1>Colton Pickleball Calendar for {{.Month}} {{.Year}}</h1>
         <form method="get" action="/">
             <input type="hidden" name="month" value="{{.NextMonth}}">
             <input type="hidden" name="year" value="{{.NextYear}}">
@@ -91,56 +93,69 @@
         <div class="header">Sat</div>
         {{range $index, $day := .Days}}
         <div class="day {{if and (gt .count 0) (le .count 3)}}blue{{else if ge .count 4}}green{{end}}" 
-                onclick="selectDay({{$index}}, {{.day}})"
-                data-count="{{.count}}">
+             onclick="selectDay({{$index}}, {{.day}})" data-date="{{.date}}">
             {{if .day}}
             <div>{{.day}}</div>
             <div>Count: {{.count}}</div>
-            {{range $i, $name := .names}}
-                {{if lt $i 4}}<div>{{$name}}</div>{{end}}
-            {{end}}
             {{end}}
         </div>
         {{end}}
     </div>
-    <form id="nameForm" action="/submit-name" method="post">
+    <div id="nameForm" style="display: none;">
         <h2 id="selectedDate"></h2>
-        <input type="hidden" id="selectedDateInput" name="date">
-        <input type="text" name="name" placeholder="Your name" required>
-        <button type="submit">Submit</button>
-    </form>
-    <div id="nameList" class="name-list"></div>
+        <form onsubmit="submitName(event)">
+            <input type="hidden" id="selectedDateInput" name="date">
+            <input type="text" id="nameInput" name="name" placeholder="Your name" required>
+            <button type="submit">Submit</button>
+        </form>
+    </div>
+    <div id="nameList"></div>
     <script>
         function selectDay(index, day) {
             if (day) {
-                const year = {{.Year}};
-                const month = {{.MonthNumber}}.toString().padStart(2, '0');
-                const paddedDay = day.toString().padStart(2, '0');
-                const date = `${year}-${month}-${paddedDay}`;
+                const dayElement = document.querySelectorAll('.day')[index];
+                const date = dayElement.dataset.date;
                 document.getElementById('selectedDate').innerText = `Selected Date: ${date}`;
                 document.getElementById('selectedDateInput').value = date;
                 document.getElementById('nameForm').style.display = 'block';
-
-                fetch(`/names?date=${date}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        const nameList = document.getElementById('nameList');
-                        nameList.innerHTML = '<h3>Names:</h3>';
-                        data.names.forEach(name => {
-                            const div = document.createElement('div');
-                            div.classList.add('name-item');
-                            div.innerHTML = `${name} <button onclick="removeName('${date}', '${name}')">x</button>`;
-                            nameList.appendChild(div);
-                        });
-                        // Update the count and color of the day
-                        const dayElement = document.querySelector(`.day[data-date="${date}"]`);
-                        if (dayElement) {
-                            const count = data.names.length;
-                            dayElement.querySelector('.count').textContent = `Count: ${count}`;
-                            dayElement.className = `day ${count >= 1 && count <= 3 ? 'blue' : count >= 4 ? 'green' : ''}`;
-                        }
-                    });
+                fetchNames(date);
             }
+        }
+
+        function fetchNames(date) {
+            fetch(`/names?date=${date}`)
+                .then(response => response.json())
+                .then(data => {
+                    const nameList = document.getElementById('nameList');
+                    nameList.innerHTML = '<h3>Names:</h3>';
+                    data.names.forEach(name => {
+                        const div = document.createElement('div');
+                        div.classList.add('name-item');
+                        div.innerHTML = `${name} <button onclick="removeName('${date}', '${name}')">Remove</button>`;
+                        nameList.appendChild(div);
+                    });
+                });
+        }
+
+        function submitName(event) {
+            event.preventDefault();
+            const date = document.getElementById('selectedDateInput').value;
+            const name = document.getElementById('nameInput').value;
+            fetch('/submit-name', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `date=${date}&name=${name}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('nameInput').value = '';
+                    fetchNames(date);
+                    updateDayCount(date);
+                }
+            });
         }
 
         function removeName(date, name) {
@@ -154,17 +169,24 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    selectDay(0, date.split('-')[2]);
+                    fetchNames(date);
+                    updateDayCount(date);
                 }
             });
         }
-    </script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            document.querySelectorAll('.day').forEach(function(day) {
-                console.log('Day:', day.textContent.trim(), 'Count:', day.dataset.count);
-            });
-        });
+
+        function updateDayCount(date) {
+            fetch(`/names?date=${date}`)
+                .then(response => response.json())
+                .then(data => {
+                    const dayElement = document.querySelector(`.day[data-date="${date}"]`);
+                    if (dayElement) {
+                        const countElement = dayElement.querySelector('div:nth-child(2)');
+                        countElement.textContent = `Count: ${data.names.length}`;
+                        dayElement.className = `day ${data.names.length >= 1 && data.names.length <= 3 ? 'blue' : data.names.length >= 4 ? 'green' : ''}`;
+                    }
+                });
+        }
     </script>
 </body>
 </html>

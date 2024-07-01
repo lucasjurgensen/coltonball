@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -22,6 +23,28 @@ var namesStore = struct {
 	data map[string][]string
 }{
 	data: make(map[string][]string),
+}
+
+func printState() {
+	namesStore.Lock()
+	defer namesStore.Unlock()
+
+	yesterday := time.Now().AddDate(0, 0, -1)
+
+	fmt.Printf("############\nCurrent State at: %v\n", time.Now())
+	for dateStr, names := range namesStore.data {
+		date, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			fmt.Printf("Error parsing date %s: %v\n", dateStr, err)
+			continue
+		}
+
+		if date.After(yesterday) && len(names) > 0 {
+			fmt.Printf("Date: %s, Names: %v\n", dateStr, names)
+		}
+	}
+	println("############")
+
 }
 
 func main() {
@@ -49,27 +72,26 @@ func main() {
 		}
 
 		firstOfMonth := time.Date(currentYear, currentMonth, 1, 0, 0, 0, 0, time.UTC)
-		firstDayOfWeek := int(firstOfMonth.Weekday())
-
 		lastOfMonth := firstOfMonth.AddDate(0, 1, -1)
+		firstDayOfWeek := int(firstOfMonth.Weekday())
 		daysInMonth := lastOfMonth.Day()
 
 		days := make([]map[string]interface{}, 0, 42)
 
 		for i := 0; i < firstDayOfWeek; i++ {
-			days = append(days, map[string]interface{}{"day": "", "count": 0, "names": []string{}})
+			days = append(days, map[string]interface{}{"day": 0, "count": 0, "names": []string{}, "date": ""})
 		}
+
 		for d := 1; d <= daysInMonth; d++ {
 			date := firstOfMonth.AddDate(0, 0, d-1).Format("2006-01-02")
 			namesStore.Lock()
 			names := namesStore.data[date]
-			count := len(names)
 			namesStore.Unlock()
-			log.Printf("Date: %s, Count: %d, Names: %v", date, count, names)
-			days = append(days, map[string]interface{}{"day": d, "count": count, "names": names})
+			days = append(days, map[string]interface{}{"day": d, "count": len(names), "names": names, "date": date})
 		}
+
 		for len(days) < 42 {
-			days = append(days, map[string]interface{}{"day": "", "count": 0, "names": []string{}})
+			days = append(days, map[string]interface{}{"day": 0, "count": 0, "names": []string{}, "date": ""})
 		}
 
 		prevMonth := currentMonth - 1
@@ -105,22 +127,22 @@ func main() {
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 			return
 		}
-		dateStr := r.FormValue("date")
+
+		date := r.FormValue("date")
 		name := r.FormValue("name")
 
-		// Parse the date and reformat it to ensure consistency
-		date, err := time.Parse("2006-1-2", dateStr)
-		if err != nil {
-			http.Error(w, "Invalid date format", http.StatusBadRequest)
-			return
-		}
-		formattedDate := date.Format("2006-01-02")
-
 		namesStore.Lock()
-		namesStore.data[formattedDate] = append(namesStore.data[formattedDate], name)
-		log.Printf("Added name %s to date %s. New count: %d", name, formattedDate, len(namesStore.data[formattedDate]))
+		namesStore.data[date] = append(namesStore.data[date], name)
 		namesStore.Unlock()
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+		})
+
+		log.Printf("Added name %s to date %s. New count: %d", name, date, len(namesStore.data[date]))
+
+		printState()
 	})
 
 	http.HandleFunc("/remove-name", func(w http.ResponseWriter, r *http.Request) {
@@ -153,6 +175,8 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 		})
+
+		printState()
 	})
 
 	http.HandleFunc("/names", func(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +192,6 @@ func main() {
 		})
 	})
 
-	log.Println("listening on", port)
+	log.Println("Listening on", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
