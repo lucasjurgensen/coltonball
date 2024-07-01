@@ -3,7 +3,7 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'coltonball-2-quiet-dew-1894'
+app = 'coltonball'
 primary_region = 'sjc'
 
 [build]
@@ -25,5 +25,5 @@ primary_region = 'sjc'
   cpus = 1
 
 [mounts]
-  source = "coltonball_vol"
+  source = "litefs"
   destination = "/var/lib/litefs"
