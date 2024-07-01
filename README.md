@@ -1,6 +1,6 @@
-# go-example
+# Colton Ball Pickleball Planner
 
-A minimal Go application for [fly.io Getting Started](https://fly.io/docs/getting-started/golang/) documentation and tutorials.
+A simple web app for hosting a shared calendar to organize a pickleball league.
 
 To get started:
 
