@@ -45,6 +45,9 @@
         .calendar .day.past.four-plus {
             border: 8px solid lightgreen;
         }
+        .calendar .day.today {
+            outline: 3px solid yellow;
+        }
         .calendar .header {
             font-weight: bold;
             text-align: center;
@@ -105,6 +108,7 @@
         <div class="header">Sat</div>
         {{range $index, $day := .Days}}
         <div class="day 
+            {{if .isToday}}today{{end}}
             {{if .isPast}}
                 past 
                 {{if eq .count 0}}zero{{else if and (gt .count 0) (le .count 3)}}one-to-three{{else if ge .count 4}}four-plus{{end}}
@@ -129,6 +133,8 @@
     </div>
     <div id="nameList"></div>
     <script>
+        const today = new Date().toISOString().split('T')[0];
+
         function selectDay(index, day, isPast) {
             const dayElement = document.querySelectorAll('.day')[index];
             const date = dayElement.dataset.date;
@@ -211,6 +217,16 @@
                     }
                 });
         }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const days = document.querySelectorAll('.day');
+            days.forEach(day => {
+                const date = day.getAttribute('data-date');
+                if (date === today) {
+                    day.classList.add('today');
+                }
+            });
+        });
     </script>
 </body>
 </html>
