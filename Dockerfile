@@ -17,4 +17,7 @@ ENTRYPOINT litefs mount
 FROM debian:bookworm
 
 COPY --from=builder /run-app /usr/local/bin/
+
+RUN apt-get update -y && apt-get install -y sqlite3
+
 CMD ["run-app"]
