@@ -33,6 +33,18 @@
         .calendar .day.green {
             background-color: lightgreen;
         }
+        .calendar .day.past {
+            background-color: gray;
+        }
+        .calendar .day.past.zero {
+            border: 8px solid gray;
+        }
+        .calendar .day.past.one-to-three {
+            border: 8px solid lightblue;
+        }
+        .calendar .day.past.four-plus {
+            border: 8px solid lightgreen;
+        }
         .calendar .header {
             font-weight: bold;
             text-align: center;
@@ -92,8 +104,14 @@
         <div class="header">Fri</div>
         <div class="header">Sat</div>
         {{range $index, $day := .Days}}
-        <div class="day {{if and (gt .count 0) (le .count 3)}}blue{{else if ge .count 4}}green{{end}}" 
-             onclick="selectDay({{$index}}, {{.day}})" data-date="{{.date}}">
+        <div class="day 
+            {{if .isPast}}
+                past 
+                {{if eq .count 0}}zero{{else if and (gt .count 0) (le .count 3)}}one-to-three{{else if ge .count 4}}four-plus{{end}}
+            {{else}}
+                {{if and (gt .count 0) (le .count 3)}}blue{{else if ge .count 4}}green{{end}}
+            {{end}}" 
+            onclick="selectDay({{$index}}, {{.day}}, {{.isPast}})" data-date="{{.date}}">
             {{if .day}}
             <div>{{.day}}</div>
             <div>Count: {{.count}}</div>
@@ -111,18 +129,16 @@
     </div>
     <div id="nameList"></div>
     <script>
-        function selectDay(index, day) {
-            if (day) {
-                const dayElement = document.querySelectorAll('.day')[index];
-                const date = dayElement.dataset.date;
-                document.getElementById('selectedDate').innerText = `Selected Date: ${date}`;
-                document.getElementById('selectedDateInput').value = date;
-                document.getElementById('nameForm').style.display = 'block';
-                fetchNames(date);
-            }
+        function selectDay(index, day, isPast) {
+            const dayElement = document.querySelectorAll('.day')[index];
+            const date = dayElement.dataset.date;
+            document.getElementById('selectedDate').innerText = `Selected Date: ${date}`;
+            document.getElementById('selectedDateInput').value = date;
+            document.getElementById('nameForm').style.display = isPast ? 'none' : 'block';
+            fetchNames(date, isPast);
         }
 
-        function fetchNames(date) {
+        function fetchNames(date, isPast) {
             fetch(`/names?date=${date}`)
                 .then(response => response.json())
                 .then(data => {
@@ -131,7 +147,9 @@
                     data.names.forEach(name => {
                         const div = document.createElement('div');
                         div.classList.add('name-item');
-                        div.innerHTML = `${name} <button onclick="removeName('${date}', '${name}')">Remove</button>`;
+                        div.innerHTML = isPast ? 
+                            `${name}` : 
+                            `${name} <button onclick="removeName('${date}', '${name}')">Remove</button>`;
                         nameList.appendChild(div);
                     });
                 });
@@ -152,7 +170,7 @@
             .then(data => {
                 if (data.success) {
                     document.getElementById('nameInput').value = '';
-                    fetchNames(date);
+                    fetchNames(date, false);
                     updateDayCount(date);
                 }
             });
@@ -169,7 +187,7 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    fetchNames(date);
+                    fetchNames(date, false);
                     updateDayCount(date);
                     location.reload();
                 }
@@ -184,7 +202,12 @@
                     if (dayElement) {
                         const countElement = dayElement.querySelector('div:nth-child(2)');
                         countElement.textContent = `Count: ${data.names.length}`;
-                        dayElement.className = `day ${data.names.length >= 1 && data.names.length <= 3 ? 'blue' : data.names.length >= 4 ? 'green' : ''}`;
+                        const isPast = dayElement.classList.contains('past');
+                        if (isPast) {
+                            dayElement.className = `day past ${data.names.length === 0 ? 'zero' : data.names.length <= 3 ? 'one-to-three' : 'four-plus'}`;
+                        } else {
+                            dayElement.className = `day ${data.names.length >= 1 && data.names.length <= 3 ? 'blue' : data.names.length >= 4 ? 'green' : ''}`;
+                        }
                     }
                 });
         }

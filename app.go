@@ -32,10 +32,10 @@ func initDB() {
 	}
 
 	createTableSQL := `CREATE TABLE IF NOT EXISTS names (
-		"id" INTEGER PRIMARY KEY AUTOINCREMENT,
-		"date" TEXT,
-		"name" TEXT
-	);`
+        "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+        "date" TEXT,
+        "name" TEXT
+    );`
 
 	_, err = db.Exec(createTableSQL)
 	if err != nil {
@@ -106,14 +106,16 @@ func main() {
 		daysInMonth := lastOfMonth.Day()
 
 		days := make([]map[string]interface{}, 0, 42)
+		today := time.Now().Format("2006-01-02")
 
 		for i := 0; i < firstDayOfWeek; i++ {
-			days = append(days, map[string]interface{}{"day": 0, "count": 0, "names": []string{}, "date": ""})
+			days = append(days, map[string]interface{}{"day": 0, "count": 0, "names": []string{}, "date": "", "isPast": false})
 		}
 
 		dbMutex.Lock()
 		for d := 1; d <= daysInMonth; d++ {
 			date := firstOfMonth.AddDate(0, 0, d-1).Format("2006-01-02")
+			isPast := date < today
 			rows, err := db.Query("SELECT name FROM names WHERE date = ?", date)
 			if err != nil {
 				log.Fatal(err)
@@ -128,12 +130,12 @@ func main() {
 				names = append(names, name)
 			}
 			rows.Close()
-			days = append(days, map[string]interface{}{"day": d, "count": len(names), "names": names, "date": date})
+			days = append(days, map[string]interface{}{"day": d, "count": len(names), "names": names, "date": date, "isPast": isPast})
 		}
 		dbMutex.Unlock()
 
 		for len(days) < 42 {
-			days = append(days, map[string]interface{}{"day": 0, "count": 0, "names": []string{}, "date": ""})
+			days = append(days, map[string]interface{}{"day": 0, "count": 0, "names": []string{}, "date": "", "isPast": false})
 		}
 
 		prevMonth := currentMonth - 1
@@ -173,6 +175,11 @@ func main() {
 		date := r.FormValue("date")
 		name := r.FormValue("name")
 
+		if date < time.Now().Format("2006-01-02") {
+			http.Error(w, "Cannot sign up for past dates", http.StatusBadRequest)
+			return
+		}
+
 		dbMutex.Lock()
 		var exists bool
 		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM names WHERE date = ? AND name = ?)", date, name).Scan(&exists)
@@ -195,7 +202,7 @@ func main() {
 			"success": true,
 		})
 
-		log.Printf("Added name %s to date %s. New count: %d", name, date, len(name)) // This log line may need adjustment
+		log.Printf("Added name %s to date %s. New count: %d", name, date, len(name))
 
 		printState()
 	})
